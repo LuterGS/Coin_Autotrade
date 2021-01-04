@@ -5,7 +5,7 @@ Coin_Autotrade
 ----
 
 # Requirements
-* 현재 작성중입니다.
+* httplib2
 
 
 # How to Use
