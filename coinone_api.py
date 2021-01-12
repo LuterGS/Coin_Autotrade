@@ -9,31 +9,28 @@ import base64
 import hashlib
 import hmac
 import json
-import time
+import os
 import httplib2
 import requests
 import time
+import signal
 
-from multiprocessing import Process, Manager
+from multiprocessing import Process, Manager, Pipe, Queue
 
 import constant
+import coinone_request
+import else_func
+
+def usr_handler(signu, frame):
+    pass
 
 
 def public_timechecker(func):
-    """
-    코인원의 Public API는 분당 300회, 초당 5회이다. 따라서, 최소 0.2초의 텀을 두고 거래하도록 하는 데코레이터 메소드이다.
-    이 데코레이터를 쓰면, 최근 Public API 요청 시간과 비교해 0.2초를 기다린다.
-    :param func: class CoinoneAPI 내의 메소드
-    """
     def wrapper(*args):
-        cur_time = time.time()
-        timediff = cur_time - args[0].public_checktime.get()
-        if timediff < 2.3:
-            time.sleep(timediff)
-            args[0].public_checktime.set(time.time())
-        args[0].public_checktime.set(cur_time)#  = cur_time
-        # print(args[0].public_checktime)
-        # print(type(args[0].public_checktime))
+        # print("start wait...", end='')
+        args[0].public_queue.put(os.getpid())
+        signal.sigtimedwait([signal.SIGUSR1], 1.5)
+        # print("end")
         return func(*args)
     return wrapper
 
@@ -45,18 +42,17 @@ def private_timechecker(func):
     :param func: class CoinoneAPI 내의 메소드
     """
     def wrapper(*args):
-        cur_time = time.time()
-        timediff = cur_time - args[0].private_checktime.get()
-        if timediff < 1.5:
-            time.sleep(timediff)
-            args[0].private_checktime.set(time.time())
-        args[0].private_checktime.set(cur_time)
+        # print(func.__name__, end='')
+        args[0].private_queue.put(os.getpid())
+        signal.sigtimedwait([signal.SIGUSR1], 1.5)
+        # print(func.__name__, "end")
         return func(*args)
     return wrapper
 
 
 def success_check(func):
     def wrapper(*args):
+        # print(func, "!!!!", *args, args)
         result = func(*args)
         if result["errorCode"] != "0":
             print(result)
@@ -70,12 +66,13 @@ def _is_success(self, raw_json):
     # print(raw_json)
     if raw_json["errorCode"] != "0":
         # print(coin, raw_json)
+        exit(1)
         return False
     else:
         return raw_json
 
 
-class CoinoneAPI:
+class CoinoneAPI(coinone_request.CoinoneQueue):
 
     LOGIN = 'https://api.coinone.co.kr/v2/account/balance'
     ORDERBOOK = 'https://api.coinone.co.kr/orderbook'
@@ -87,16 +84,13 @@ class CoinoneAPI:
     CANCEL_ORDER = 'https://api.coinone.co.kr/v2/order/cancel'
 
     def __init__(self):
+        super().__init__()
+
         # 시크릿 키와, 액세스 토큰을 받아온다.
         self._ACCESS_TOKEN, self._SECRET_KEY = self._get_key()
 
-        # timechecker
-        self.manager = Manager()
-        self.public_checktime = self.manager.Value('L', time.time())
-        self.private_checktime = self.manager.Value('L', time.time())
-        # self.public_checktime.
-        # self.public_checktime = time.time()
-        # self.private_checktime = time.time()
+        # set signal
+        signal.signal(signal.SIGUSR1, usr_handler)
 
     def _get_key(self):
         """
@@ -138,8 +132,10 @@ class CoinoneAPI:
         # print(url, payload)
         # print(encoded_payload)
         # print(response, content)
+        content = content.decode().replace('“', '"').replace('”', '"')
+        # print(content)
 
-        return json.loads(content.decode())
+        return json.loads(content)
 
     @private_timechecker
     @success_check
@@ -147,9 +143,16 @@ class CoinoneAPI:
         payload = {'access_token': self._ACCESS_TOKEN}
         return self._get_response(self.LOGIN, payload)
 
+    def test_orderbook(self, coin):
+        # print(coin)
+        pr = Process(target=self.get_orderbook, args=(coin, ))
+        pr.start()
+        pr2 = Process(target=self.get_balance, args=())
+        pr2.start()
+
     @public_timechecker
     @success_check
-    def get_orderbook(self, coin):
+    def get_orderbook(self, coin):  # queue: Queue,
         return requests.get(self.ORDERBOOK, params={'currency': coin}).json()
 
     @public_timechecker
@@ -169,7 +172,6 @@ class CoinoneAPI:
         }
         return self._get_response(self.BUY, payload)
 
-
     @private_timechecker
     @success_check
     def sell_coin(self, currency: str, price: float, qty: float):
@@ -182,10 +184,9 @@ class CoinoneAPI:
         }
         return self._get_response(self.SELL, payload)
 
-
     @private_timechecker
     @success_check
-    def cancel_order(self, order_id, currency, price, qty, is_sell=True):
+    def cancel_order(self, order_id, currency, price, qty, is_sell):
         payload = {
             'access_token': self._ACCESS_TOKEN,
             'order_id': order_id,
@@ -196,7 +197,6 @@ class CoinoneAPI:
         }
         return self._get_response(self.CANCEL_ORDER, payload)
 
-
     @private_timechecker
     @success_check
     def check_order(self, coin):
@@ -205,7 +205,6 @@ class CoinoneAPI:
             'currency': coin
         }
         return self._get_response(self.LIMIT_ORDER, payload)
-
 
     @private_timechecker
     @success_check
@@ -216,9 +215,22 @@ class CoinoneAPI:
         }
         return self._get_response(self.COMPLETE_ORDER, payload)
 
+    @coinone_request.multiprocess_timecheck
+    def test1(self, a, b, c, d):
+        print(a, b, c, d)
+
 
 if __name__ == "__main__":
     test = CoinoneAPI()
 
-    result = test.sell_coin("tmc", 74.6, 99.9)
+    result = test.get_orderbook("btc")
     print(result)
+    exit(0)
+
+    for i in range(20):
+        test.test_orderbook("btc")
+    exit(0)
+    val = test.check_complete_order(test.private_checktime, "btc")
+    print(val)
+    val = test.sell_coin(test.private_checktime, "xrp", 341.1, 29.0877)
+    print(val)

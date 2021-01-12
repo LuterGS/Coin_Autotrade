@@ -4,6 +4,7 @@ import time
 import signal
 
 from multiprocessing import Process, Manager
+import threading
 
 import constant
 from coinone_api import CoinoneAPI
@@ -20,6 +21,7 @@ class Coinone(CoinoneAPI, DB):
 
     def get_trusted_coin(self, select_count=constant.TRADE_COIN_NUM):
         ticker = self.get_tickers()
+        print("ticker :", ticker)
         ticker.pop('result')
         ticker.pop('errorCode')
         ticker.pop('timestamp')
@@ -40,10 +42,10 @@ class Coinone(CoinoneAPI, DB):
         :param is_sell:
         :return:
         """
-        if is_sell:     # 매도일 때, 매수 최고가로 팔기 위해 해당 가격을 돌려준다.
-            return float(orderbook['bid'][0]['price'])      # 매수최고가
+        if is_sell:  # 매도일 때, 매수 최고가로 팔기 위해 해당 가격을 돌려준다.
+            return float(orderbook['bid'][0]['price'])  # 매수최고가
         else:
-            return float(orderbook['ask'][0]['price'])      # 매도최저가
+            return float(orderbook['ask'][0]['price'])  # 매도최저가
 
     def _get_coin_list(self, cur_coin_list, not_buy_list: list):
         coins = self.get_trusted_coin(constant.TRADE_COIN_NUM * 3)
@@ -64,7 +66,7 @@ class Coinone(CoinoneAPI, DB):
         if len(buy_list) < constant.TRADE_COIN_NUM:
             print("거래량이 높은 코인들조차 하락세입니다. 3시간동안 거래를 중지합니다.")
             time.sleep(10800)
-            return self._get_coin_list(cur_coin_list, not_buy_list)       # 재귀 이용
+            return self._get_coin_list(cur_coin_list, not_buy_list)  # 재귀 이용
         else:
             return buy_list
 
@@ -80,6 +82,7 @@ class Coinone(CoinoneAPI, DB):
         if buy_result is False: exit(0)
         buy_id = buy_result['orderId']
         buy_time = time.time()
+        buy_price = coin_price * qty
         while True:
             # 주문이 완료되면 주문 체크를 종료
             if len(self.check_order(coin_name)['limitOrders']) == 0:
@@ -87,29 +90,38 @@ class Coinone(CoinoneAPI, DB):
 
             # 만약 거래가 이루이지지 않으면 거래 취소 후 종료
             if time.time() - buy_time > 300:
-                cancel_order = self.cancel_order(buy_result['orderId'], coin_name, coin_price, constant.TRADE_ONECOIN_VAL / coin_price)
+                cancel_order = self.cancel_order(buy_result['orderId'], coin_name, coin_price,
+                                                 constant.TRADE_ONECOIN_VAL / coin_price)
                 self.db_sell_coin(coin_name, False)
                 exit(0)
 
-        print("buy complete")
-
         # 구매금 확인 및 수량 업데이트
+        # TODO: 코인을 쪼개서 구매했을 때 어떻게 처리할 것인가?
         complete_order = self.check_complete_order(coin_name)
+        qty = 0.0
+        heuristics_counter = 0
         for data in complete_order['completeOrders']:
             if data['orderId'] == buy_id:
-                qty = round(qty - float(data['fee']), 4)
+                qty += int((float(data['qty']) - float(data['fee'])) * 10000) / 10000
+                coin_price = float(data['price'])
+            if heuristics_counter == 4:
                 break
+            heuristics_counter += 1
+
+        print(coin_name + "\tbuy complete, qty : ", qty, "\tprice : ", coin_price)
 
         # 판매금액 재확인
         zero_count = else_func.get_zero(coin_price)
         if zero_count == 0:
-            profit_price = coin_price * (1. + (constant.PROFIT_PERCENT / 100.0))
-            loss_price = coin_price * (1. + (constant.PROFIT_PERCENT / 100.0))
+            profit_price = round(coin_price * (1. + (constant.PROFIT_PERCENT / 100.0)), 1)
+            loss_price = round(coin_price * (1. + (constant.LOSS_PERCENT / 100.0)), 1)
         else:
-            profit_price = round((coin_price * (1. + (constant.PROFIT_PERCENT / 100.))) / (10 ** zero_count), 0) * (10 ** zero_count)
-            loss_price = round((coin_price * (1. - (constant.LOSS_PERCENT / 100.))) / (10 ** zero_count), 0) * (10 ** zero_count)
+            profit_price = round((coin_price * (1. + (constant.PROFIT_PERCENT / 100.))) / (10 ** zero_count), 0) * (
+                        10 ** zero_count)
+            loss_price = round((coin_price * (1. - (constant.LOSS_PERCENT / 100.))) / (10 ** zero_count), 0) * (
+                        10 ** zero_count)
 
-        print("buy amount check, update val : ", qty, profit_price, loss_price)
+        print(coin_name + "\tbuy amount check, update val : ", profit_price, loss_price)
 
         # 가격 체크후 손익분기에 도달하면 판매하되, 판매가 딜레이되면 주문을 취소하고 다시 측정하는 방법을 계속 시도
         while True:
@@ -129,26 +141,35 @@ class Coinone(CoinoneAPI, DB):
                     is_loss = True
                     break
 
-            print("request sell complete")
+            print(coin_name + "\trequest sell complete")
 
             # 판매 주문이 올라가지 않았으면 주문 취소 후 재시도
             while True:
                 if len(self.check_order(coin_name)['limitOrders']) == 0:
                     self.db_sell_coin(coin_name, is_loss)
+
+                    complete_order = self.check_complete_order(coin_name)
+                    for data in complete_order['completeOrders']:
+                        if data['orderId'] == sell_id:
+                            sell_price = (float(data['qty']) - float(data['fee'])) * float(data['price'])
+                            break
+
                     end = True
                     break
 
                 if time.time() - sell_time > 100:
                     if is_loss:
-                        cancel_order = self.cancel_order(sell_id, coin_name, loss_price, qty, is_sell=True)
+                        cancel_order = self.cancel_order(sell_id, coin_name, loss_price, qty,
+                                                         True)
                     else:
-                        cancel_order = self.cancel_order(sell_id, coin_name, profit_price, qty, is_sell=True)
+                        cancel_order = self.cancel_order(sell_id, coin_name, profit_price, qty,
+                                                         True)
                     end = False
 
             if end:
-                print("order cycle of " + coin_name + " is complete" + " profit : ", str(is_loss))
+                print("order cycle of " + coin_name + " is complete" + " profit : ",
+                      str(round(sell_price - buy_price, 0)))
                 break
-
 
     def trade(self):
         cur_coin_list = self.get_cur_buy_list()
@@ -159,21 +180,23 @@ class Coinone(CoinoneAPI, DB):
             buy_result = self.buy_coin(coin, buy_list[coin], constant.TRADE_ONECOIN_VAL / buy_list[coin])
             print(coin, buy_list[coin])
 
-
-
     def db_listener(self):
         print('Listener is listening Redis...')
+        lock = threading.Lock()
         for data in self._event_checker.listen():
-            if data['data'] == b'lrem':     # lrem이 이루어질 때만 시도함.
+            if data['data'] == b'lrem':  # lrem이 이루어질 때만 시도함.
                 cur_coin_list = self.get_cur_buy_list()
                 not_buy_list = self.get_not_buy_list()
                 buy_expect_list = self._get_coin_list(cur_coin_list, not_buy_list)
                 print(buy_expect_list)
                 for coin in buy_expect_list:
                     print(coin)
-                    process = Process(target=self._check_and_buy, args=(coin, buy_expect_list[coin]))
-                    process.start()         # 얘는 그냥 실행만 시키고 끝나야하는데...
+                    thread = threading.Thread(target=self._check_and_buy, args=(
+                    coin, buy_expect_list[coin]), name=coin)
+                    # process = Process(target=self._check_and_buy, args=(coin, buy_expect_list[coin], self.private_checktime, self.public_checktime), name=coin)
+                    thread.start()  # 얘는 그냥 실행만 시키고 끝나야하는데...
                 # print("end of lpop onecycle")       #
+
 
 if __name__ == "__main__":
     test = Coinone()

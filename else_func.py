@@ -1,3 +1,5 @@
+import requests
+
 import constant
 
 
@@ -24,6 +26,13 @@ def get_zero(input_val):
             break
     return counter
 
+
+def args_wrapper(*args):
+    return args
+
+
+def request_wrapper(address, param):
+    return requests.get(url=address, params=param).json()
 
 
 if __name__ == "__main__":
