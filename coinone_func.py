@@ -114,7 +114,7 @@ class Coinone(CoinoneAPI, DB):
         zero_count = else_func.get_zero(coin_price)
         if zero_count == 0:
             profit_price = round(coin_price * (1. + (constant.PROFIT_PERCENT / 100.0)), 1)
-            loss_price = round(coin_price * (1. + (constant.LOSS_PERCENT / 100.0)), 1)
+            loss_price = round(coin_price * (1. - (constant.LOSS_PERCENT / 100.0)), 1)
         else:
             profit_price = round((coin_price * (1. + (constant.PROFIT_PERCENT / 100.))) / (10 ** zero_count), 0) * (
                         10 ** zero_count)
@@ -130,12 +130,16 @@ class Coinone(CoinoneAPI, DB):
                 cur_coin_val = self._get_coin_val(self.get_orderbook(coin_name))
                 if cur_coin_val >= profit_price:
                     sell_result = self.sell_coin(coin_name, profit_price, qty)
+                    if sell_result is False:
+                        sell_result = self.sell_coin(coin_name, profit_price, qty - 0.0001)
                     sell_id = sell_result['orderId']
                     sell_time = time.time()
                     is_loss = False
                     break
                 elif cur_coin_val < loss_price:
                     sell_result = self.sell_coin(coin_name, loss_price, qty)
+                    if sell_result is False:
+                        sell_result = self.sell_coin(coin_name, loss_price, qty - 0.0001)
                     sell_id = sell_result['orderId']
                     sell_time = time.time()
                     is_loss = True
@@ -159,11 +163,9 @@ class Coinone(CoinoneAPI, DB):
 
                 if time.time() - sell_time > 100:
                     if is_loss:
-                        cancel_order = self.cancel_order(sell_id, coin_name, loss_price, qty,
-                                                         True)
+                        cancel_order = self.cancel_order(sell_id, coin_name, loss_price, qty, True)
                     else:
-                        cancel_order = self.cancel_order(sell_id, coin_name, profit_price, qty,
-                                                         True)
+                        cancel_order = self.cancel_order(sell_id, coin_name, profit_price, qty, True)
                     end = False
 
             if end:
