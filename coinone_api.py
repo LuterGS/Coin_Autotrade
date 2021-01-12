@@ -160,7 +160,7 @@ class CoinoneAPI:
     @private_timechecker
     @success_check
     def buy_coin(self, currency: str, price: float, qty: float):
-        # print(currency, price, qty)
+        print("buy coin :", currency, price, qty)
         payload = {
             'access_token': self._ACCESS_TOKEN,
             'currency': currency,
@@ -173,6 +173,7 @@ class CoinoneAPI:
     @private_timechecker
     @success_check
     def sell_coin(self, currency: str, price: float, qty: float):
+        print("sell coin :", currency, price, qty)
         payload = {
             'access_token': self._ACCESS_TOKEN,
             'currency': currency,
@@ -219,14 +220,5 @@ class CoinoneAPI:
 if __name__ == "__main__":
     test = CoinoneAPI()
 
-    result = test.buy_coin("isdt", 0.50, 1000)
-    result_id = result['orderId']
+    result = test.sell_coin("tmc", 74.6, 99.9)
     print(result)
-    res2 = test.check_order("isdt")
-    print(res2)
-    print(len(res2['limitOrders']), res2['limitOrders'])
-    cancel = test.cancel_order(result_id, 'isdt', 0.50, 1000, False)
-    print(cancel)
-    res2 = test.check_order("isdt")
-    print(res2)
-    print(len(res2['limitOrders']), res2['limitOrders'])

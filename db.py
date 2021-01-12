@@ -23,14 +23,9 @@ class DB:
         self._event_checker.psubscribe("__keyspace@0__:cur_buy_list")
 
         # print(self._db.get("LuterGS"))
-    def heavy_load(self):
-        print('reached heavy_load')
-        for i in range(50):
-            print(i, end='')
-            self._db.lpush("cur_buy_list", i)
-        for i in range(50):
-            print("x", end='')
-            self._db.lpop("cur_buy_list")
+    def _event_checker2(self):
+        for data in self._event_checker.listen():
+            print(data)
 
     def _check_main(self):
         if self._db.lrange("not_buy_list", 0, -1) is None:
@@ -51,7 +46,7 @@ class DB:
     def db_loss_coin(self, coin: str):
         db_value = self._db.get(coin)
         if db_value is None:
-            self._db.set(coin, 0)
+            self._db.set(coin, 1)
         if db_value == b'0':
             self._db.set(coin, 1)
         if db_value == b'1':
@@ -75,5 +70,4 @@ class DB:
 
 if __name__ == "__main__":
     test = DB()
-    test.get_not_buy_list()
-    test.get_cur_buy_list()
+    test._event_checker2()

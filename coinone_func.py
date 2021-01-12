@@ -46,7 +46,7 @@ class Coinone(CoinoneAPI, DB):
             return float(orderbook['ask'][0]['price'])      # 매도최저가
 
     def _get_coin_list(self, cur_coin_list, not_buy_list: list):
-        coins = self.get_trusted_coin(constant.TRADE_COIN_NUM * 2)
+        coins = self.get_trusted_coin(constant.TRADE_COIN_NUM * 3)
         print(coins)
         buy_list = {}
         counter = 0
@@ -64,7 +64,7 @@ class Coinone(CoinoneAPI, DB):
         if len(buy_list) < constant.TRADE_COIN_NUM:
             print("거래량이 높은 코인들조차 하락세입니다. 3시간동안 거래를 중지합니다.")
             time.sleep(10800)
-            return self._get_coin_list(cur_coin_list)       # 재귀 이용
+            return self._get_coin_list(cur_coin_list, not_buy_list)       # 재귀 이용
         else:
             return buy_list
 
@@ -99,8 +99,15 @@ class Coinone(CoinoneAPI, DB):
             if data['orderId'] == buy_id:
                 qty = round(qty - float(data['fee']), 4)
                 break
-        profit_price = coin_price * (1. + (constant.PROFIT_PERCENT / 100.))
-        loss_price = coin_price * (1. - (constant.LOSS_PERCENT / 100.))
+
+        # 판매금액 재확인
+        zero_count = else_func.get_zero(coin_price)
+        if zero_count == 0:
+            profit_price = coin_price * (1. + (constant.PROFIT_PERCENT / 100.0))
+            loss_price = coin_price * (1. + (constant.PROFIT_PERCENT / 100.0))
+        else:
+            profit_price = round((coin_price * (1. + (constant.PROFIT_PERCENT / 100.))) / (10 ** zero_count), 0) * (10 ** zero_count)
+            loss_price = round((coin_price * (1. - (constant.LOSS_PERCENT / 100.))) / (10 ** zero_count), 0) * (10 ** zero_count)
 
         print("buy amount check, update val : ", qty, profit_price, loss_price)
 
@@ -139,7 +146,7 @@ class Coinone(CoinoneAPI, DB):
                     end = False
 
             if end:
-                print("order cycle of " + coin_name + " is complete")
+                print("order cycle of " + coin_name + " is complete" + " profit : ", str(is_loss))
                 break
 
 
@@ -157,7 +164,7 @@ class Coinone(CoinoneAPI, DB):
     def db_listener(self):
         print('Listener is listening Redis...')
         for data in self._event_checker.listen():
-            if data['data'] == b'lpop':     # pop이 이루어질 때만 시도함.
+            if data['data'] == b'lrem':     # lrem이 이루어질 때만 시도함.
                 cur_coin_list = self.get_cur_buy_list()
                 not_buy_list = self.get_not_buy_list()
                 buy_expect_list = self._get_coin_list(cur_coin_list, not_buy_list)
@@ -165,7 +172,8 @@ class Coinone(CoinoneAPI, DB):
                 for coin in buy_expect_list:
                     print(coin)
                     process = Process(target=self._check_and_buy, args=(coin, buy_expect_list[coin]))
-                    process.start()
+                    process.start()         # 얘는 그냥 실행만 시키고 끝나야하는데...
+                # print("end of lpop onecycle")       #
 
 if __name__ == "__main__":
     test = Coinone()

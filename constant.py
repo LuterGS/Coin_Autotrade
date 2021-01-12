@@ -17,7 +17,7 @@ password=foo_bar
 """
 
 
-TRADE_COIN_NUM = 2          # 거래할 코인 수
+TRADE_COIN_NUM = 3          # 거래할 코인 수
 TRADE_ONECOIN_VAL = 10000.0     # 각 코인의 구매량. 끝에 .0 붙여서 float형으로 해야 함
 
 PROFIT_PERCENT = 3.         # 이득 퍼센트. 해당 퍼센트를 넘게 이득보면 매도
