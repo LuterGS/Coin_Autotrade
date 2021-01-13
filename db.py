@@ -13,7 +13,7 @@ class DB:
         self._ip = get_db_val["ip"]
         self._port = int(get_db_val["port"])
         self._password = get_db_val["password"]
-        self._db = redis.StrictRedis(host=self._ip, port=self._port, db=0, password=self._password)
+        self._db = redis.StrictRedis(host=self._ip, port=self._port, db=0, password=None)
 
         # queue initer
         self._check_main()
@@ -39,7 +39,7 @@ class DB:
         self._db.lpush("cur_buy_list", coin)
 
     def db_sell_coin(self, coin: str, is_loss: bool):
-        self._db.lrem("cur_buy_list", 0, coin)
+        self._db.lrem("cur_buy_list", 1, coin)
         if is_loss:
             self.db_loss_coin(coin)
 
@@ -51,6 +51,7 @@ class DB:
             self._db.set(coin, 1)
         if db_value == b'1':
             self._db.rpush("not_buy_list", coin)
+            print(coin + " falling twice. cooldown...")
             time.sleep(constant.TIME_COOLDOWN)
             self._db.lrem("not_buy_list", 1, coin)
             self._db.set(coin, 0)
