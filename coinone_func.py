@@ -11,6 +11,7 @@ import constant
 from coinone_api import CoinoneAPI
 from db import DB
 import else_func
+from else_func import timelog
 
 
 class Coinone(CoinoneAPI, DB):
@@ -22,7 +23,7 @@ class Coinone(CoinoneAPI, DB):
 
     def get_trusted_coin(self, select_count=constant.TRADE_COIN_NUM):
         ticker = self.get_tickers()
-        print(str(datetime.datetime.now()), "\tticker :", ticker)
+        # timelog("ticker :", ticker)
         ticker.pop('result')
         ticker.pop('errorCode')
         ticker.pop('timestamp')
@@ -50,12 +51,12 @@ class Coinone(CoinoneAPI, DB):
 
     def _get_coin_list(self, cur_coin_list, not_buy_list: list):
         coins = self.get_trusted_coin(constant.TRADE_COIN_NUM * 3)
-        print(str(datetime.datetime.now()), "\tcur_coin_list : ", cur_coin_list, "\tnot_buy_list : ", not_buy_list)
+        timelog("cur_coin_list : ", cur_coin_list, "\tnot_buy_list : ", not_buy_list)
         buy_list = {}
         counter = 0
         for coin in coins:
             coin_orderbook = self.get_orderbook(coin)
-            if else_func.get_falling(coin_orderbook) or not_buy_list.count(coin) > 0:
+            if else_func.get_falling(coin_orderbook) or not_buy_list.count(coin) > 0 or cur_coin_list.count(coin) > 0:
                 pass
             else:
                 buy_list[coin] = self._get_coin_val(coin_orderbook, is_sell=False)
@@ -64,9 +65,9 @@ class Coinone(CoinoneAPI, DB):
             if counter == constant.TRADE_COIN_NUM - len(cur_coin_list):
                 break
 
-        if len(buy_list) < constant.TRADE_COIN_NUM:
-            print(str(datetime.datetime.now()), "\t거래량이 높은 코인들조차 하락세입니다. 3시간동안 거래를 중지합니다.")
-            time.sleep(10800)
+        if len(buy_list) < constant.TRADE_COIN_NUM - len(cur_coin_list):
+            timelog("거래량이 높은 코인들조차 하락세입니다. 3시간동안 거래를 중지합니다.")
+            time.sleep(constant.TIME_MARKET_COOLDOWN)
             return self._get_coin_list(cur_coin_list, not_buy_list)  # 재귀 이용
         else:
             return buy_list
@@ -83,17 +84,17 @@ class Coinone(CoinoneAPI, DB):
         if buy_result is False: exit(0)
         buy_id = buy_result['orderId']
         buy_time = time.time()
-        buy_price = coin_price * qty
+        buy_price = round(coin_price * qty, 2)
         while True:
-            # 주문이 완료되면 주문 체크를 종료
-            if len(self.check_order(coin_name)['limitOrders']) == 0:
+            # 주문이 완료되면 DB에 정상적으로 주문이 완료되었다고 입력 후 종료
+            if self.trace_order(buy_id, coin_name)['status'] == 'filled':
+                self.db_buy_confirm_coin(coin_name, coin_price, qty, buy_price)
                 break
 
             # 만약 거래가 이루이지지 않으면 거래 취소 후 종료
             if time.time() - buy_time > 300:
-                cancel_order = self.cancel_order(buy_result['orderId'], coin_name, coin_price,
-                                                 constant.TRADE_ONECOIN_VAL / coin_price)
-                self.db_sell_coin(coin_name, False)
+                cancel_order = self.cancel_order(buy_id, coin_name, coin_price, qty, True)
+                self.db_buy_erase_coin(coin_name)
                 exit(0)
 
         # 구매금 확인 및 수량 업데이트
@@ -109,7 +110,7 @@ class Coinone(CoinoneAPI, DB):
                 break
             heuristics_counter += 1
 
-        print(str(datetime.datetime.now()), "\t", coin_name + "\tbuy complete, qty : ", qty, "\tprice : ", coin_price)
+        timelog(coin_name + "\tbuy complete, qty : ", qty, "\tprice : ", coin_price)
 
         # 판매금액 재확인
         zero_count = else_func.get_zero(coin_price)
@@ -132,7 +133,8 @@ class Coinone(CoinoneAPI, DB):
                 if cur_coin_val >= profit_price:
                     sell_result = self.sell_coin(coin_name, profit_price, qty)
                     if sell_result is False:
-                        sell_result = self.sell_coin(coin_name, profit_price, qty - 0.0001)
+                        qty = qty - 0.0001
+                        sell_result = self.sell_coin(coin_name, profit_price, qty)
                     sell_id = sell_result['orderId']
                     sell_time = time.time()
                     is_loss = False
@@ -140,31 +142,32 @@ class Coinone(CoinoneAPI, DB):
                 elif cur_coin_val < loss_price:
                     sell_result = self.sell_coin(coin_name, loss_price, qty)
                     if sell_result is False:
-                        sell_result = self.sell_coin(coin_name, loss_price, qty - 0.0001)
+                        qty = qty - 0.0001
+                        sell_result = self.sell_coin(coin_name, loss_price, qty)
                     sell_id = sell_result['orderId']
                     sell_time = time.time()
                     is_loss = True
                     break
 
             # print(coin_name + "\trequest sell complete, sleep for 5 seconds for confirm")
-            time.sleep(5)
+            # time.sleep(5)
 
             # 판매 주문이 올라가지 않았으면 주문 취소 후 재시도
             while True:
-                check_order = self.check_order(coin_name)
-                if len(check_order['limitOrders']) == 0:
+                if self.trace_order(sell_id, coin_name)['status'] == 'filled':
                     # print(check_order)
-                    self.db_sell_coin(coin_name, is_loss)
 
                     complete_order = self.check_complete_order(coin_name)
                     sell_price = 0
                     heuristics_counter = 0
                     for data in complete_order['completeOrders']:
                         if data['orderId'] == sell_id:
-                            sell_price += (float(data['qty']) - float(data['fee'])) * float(data['price'])
+                            sell_price += round((float(data['qty']) + float(data['fee'])) * float(data['price']), 2)
                             heuristics_counter += 1
                         if heuristics_counter == 4:
                             break
+
+                    self.db_sell_coin(coin_name, loss_price, profit_price, sell_price, qty, is_loss)
 
                     end = True
                     break
@@ -177,27 +180,27 @@ class Coinone(CoinoneAPI, DB):
                     end = False
 
             if end:
-                print(str(datetime.datetime.now()), "\torder cycle of " + coin_name + " is complete" + " profit : ", str(is_loss))
+                timelog("order cycle of " + coin_name + " is complete" + " profit : ", str(not is_loss))
                 break
 
     def trade(self):
         cur_coin_list = self.get_cur_buy_list()
         buy_list = self._get_coin_list(cur_coin_list)
-        print("cur_coin_list : ", cur_coin_list)
-        print("buy_list : ", buy_list)
+        timelog("cur_coin_list : ", cur_coin_list)
+        timelog("buy_list : ", buy_list)
         for coin in buy_list:
             buy_result = self.buy_coin(coin, buy_list[coin], constant.TRADE_ONECOIN_VAL / buy_list[coin])
-            print(coin, buy_list[coin])
+            timelog(coin, buy_list[coin])
 
     def db_listener(self):
-        print(str(datetime.datetime.now()), '\tListener is listening Redis...')
-        lock = threading.Lock()
+        timelog('Listener is listening Redis...')
         for data in self._event_checker.listen():
+            # print(data)
             if data['data'] == b'lrem':  # lrem이 이루어질 때만 시도함.
                 cur_coin_list = self.get_cur_buy_list()
                 not_buy_list = self.get_not_buy_list()
                 buy_expect_list = self._get_coin_list(cur_coin_list, not_buy_list)
-                print(str(datetime.datetime.now()), "\tbuy_expect_list : ", buy_expect_list)
+                timelog("buy_expect_list : ", buy_expect_list)
                 for coin in buy_expect_list:
                     # print(coin)
                     thread = threading.Thread(target=self._check_and_buy, args=(

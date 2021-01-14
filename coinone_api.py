@@ -55,21 +55,11 @@ def success_check(func):
         # print(func, "!!!!", *args, args)
         result = func(*args)
         if result["errorCode"] != "0":
-            print(result)
+            print(func, args, result)
             return False
         else:
             return result
     return wrapper
-
-
-def _is_success(self, raw_json):
-    # print(raw_json)
-    if raw_json["errorCode"] != "0":
-        # print(coin, raw_json)
-        exit(1)
-        return False
-    else:
-        return raw_json
 
 
 class CoinoneAPI(coinone_request.CoinoneQueue):
@@ -80,6 +70,7 @@ class CoinoneAPI(coinone_request.CoinoneQueue):
     BUY = 'https://api.coinone.co.kr/v2/order/limit_buy'
     SELL = 'https://api.coinone.co.kr/v2/order/limit_sell'
     LIMIT_ORDER = 'https://api.coinone.co.kr/v2/order/limit_orders'
+    TRACE_ORDER = 'https://api.coinone.co.kr/v2/order/order_info'
     COMPLETE_ORDER = 'https://api.coinone.co.kr/v2/order/complete_orders'
     CANCEL_ORDER = 'https://api.coinone.co.kr/v2/order/cancel'
 
@@ -158,12 +149,20 @@ class CoinoneAPI(coinone_request.CoinoneQueue):
     @public_timechecker
     @success_check
     def get_tickers(self):
-        return requests.get(self.TICKER, params={'currency': 'all'}).json()
+        try:
+            raw_value = requests.get(self.TICKER, params={'currency': 'all'})
+            value = raw_value.json()
+            return value
+        except json.decoder.JSONDecodeError:
+            print(raw_value)
+        finally:
+            value = requests.get(self.TICKER, params={'currency': 'all'}).json()
+            return value
 
     @private_timechecker
     @success_check
     def buy_coin(self, currency: str, price: float, qty: float):
-        print("buy coin :", currency, price, qty)
+        # print("buy coin :", currency, price, qty)
         payload = {
             'access_token': self._ACCESS_TOKEN,
             'currency': currency,
@@ -175,7 +174,7 @@ class CoinoneAPI(coinone_request.CoinoneQueue):
     @private_timechecker
     @success_check
     def sell_coin(self, currency: str, price: float, qty: float):
-        print("sell coin :", currency, price, qty)
+        # print("sell coin :", currency, price, qty)
         payload = {
             'access_token': self._ACCESS_TOKEN,
             'currency': currency,
@@ -196,6 +195,16 @@ class CoinoneAPI(coinone_request.CoinoneQueue):
             'currency': currency
         }
         return self._get_response(self.CANCEL_ORDER, payload)
+
+    @private_timechecker
+    @success_check
+    def trace_order(self, order_id, coin):
+        payload = {
+            'access_token': self._ACCESS_TOKEN,
+            'order_id': order_id,
+            'currency': coin
+        }
+        return self._get_response(self.TRACE_ORDER, payload)
 
     @private_timechecker
     @success_check
@@ -223,14 +232,5 @@ class CoinoneAPI(coinone_request.CoinoneQueue):
 if __name__ == "__main__":
     test = CoinoneAPI()
 
-    result = test.get_orderbook("btc")
+    result = test.trace_order('998625ab-1e4d-11e9-9ec7-00e04c3600d7', 'xrp')
     print(result)
-    exit(0)
-
-    for i in range(20):
-        test.test_orderbook("btc")
-    exit(0)
-    val = test.check_complete_order(test.private_checktime, "btc")
-    print(val)
-    val = test.sell_coin(test.private_checktime, "xrp", 341.1, 29.0877)
-    print(val)
