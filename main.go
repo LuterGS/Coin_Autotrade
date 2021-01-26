@@ -1,11 +1,12 @@
 package main
 
 import (
-	test "./src"
+	"./src"
 )
 
 func main() {
 
-	test.Timelog("hello go!")
+	src.Test()
+	//src.Timelog(result)
 
 }

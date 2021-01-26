@@ -13,7 +13,7 @@ func Timelog(a ...interface{}) {
 	fmt.Println(a...)
 }
 
-func readFromFile(fileName string) map[string]string {
+func ReadFromFile(fileName string) map[string]string {
 
 	curLoc, _ := os.Getwd()
 	Timelog(curLoc + fileName)
@@ -32,4 +32,8 @@ func readFromFile(fileName string) map[string]string {
 	}
 
 	return fileMap
+}
+
+func getMicrosec() int64 {
+	return time.Now().UnixNano() / int64(time.Millisecond)
 }
