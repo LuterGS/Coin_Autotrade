@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 )
@@ -79,7 +80,13 @@ func (h *httpRequester) requestPrivate(order privateOrder, data interface{}, val
 
 	//replaced := bytes.ReplaceAll(rawDataByte, []byte("\""), []byte("'"))
 	//dataByte := bytes.NewBuffer(rawDataByte)
-	dataByte := bytes.NewBufferString(string(rawDataByte))
+	dataByte_bak := bytes.NewBufferString(string(rawDataByte))
+	Timelog(dataByte_bak)
+
+	dataByte := url.Values{}
+	dataByte.Set("currency", "btc")
+	dataByte.Set("endpoint", "/info/balance")
+
 	nonce := time.Now().UnixNano() / int64(time.Millisecond)
 	strNonce := strconv.FormatInt(nonce, 10)
 
@@ -91,7 +98,9 @@ func (h *httpRequester) requestPrivate(order privateOrder, data interface{}, val
 	Timelog("URL : ", h.basicUrl+string(order))
 	Timelog("BODY : ", bytes.NewBufferString(values.Encode()))
 
-	request, err := http.NewRequest("POST", h.basicUrl+string(order), dataByte)
+	//request, err := http.NewRequest("POST", h.basicUrl+string(order), dataByte)
+	request, err := http.NewRequest("POST", h.basicUrl+string(order), strings.NewReader(dataByte.Encode()))
+	//request, err := http.NewRequest("POST", "http://0.0.0.0:9876", strings.NewReader(dataByte.Encode()))
 	if err != nil {
 		panic("Failed to create Request")
 	}
@@ -100,13 +109,14 @@ func (h *httpRequester) requestPrivate(order privateOrder, data interface{}, val
 
 	request.Header.Add("User-Agent", "tester")
 	request.Header.Add("Api-Key", h.connectKey)
-	request.Header.Add("Secret-Key", h.secretKey)
+	//request.Header.Add("Secret-Key", h.secretKey)
 	request.Header.Add("Api-Sign", encrypted)
 	request.Header.Add("Api-Nonce", strNonce)
 	request.Header.Add("Connection", "keep-alive")
 	request.Header.Add("Accept-Encoding", "gzip, deflate")
 	request.Header.Add("Accept", "*/*")
-	request.Header.Add("Content-type", "application/json")
+	request.Header.Add("Content-type", "application/x-www-form-urlencoded")
+	request.Header.Add("Content-Length", strconv.Itoa(len(dataByte.Encode())))
 
 	Timelog("Final, Header : ", request.Header)
 	Timelog("Final, Body : ", dataByte)

@@ -140,11 +140,6 @@ func (b *BithumbRequester) GetBalance(orderCurrency currency) {
 
 func Test1() {
 
-	test2 := NewClient("57bc35837f7f00c6f64a25d25ef69f6f", "7539214f665dfbd945dac04010b16eea")
-	val, err := test2.Balance("btc")
-	Timelog("ERR : ", err)
-	Timelog("VAL : ", val)
-
 	test := NewBithumbRequester("57bc35837f7f00c6f64a25d25ef69f6f", "7539214f665dfbd945dac04010b16eea")
 
 	test.GetBalance(BTC)
