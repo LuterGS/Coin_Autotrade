@@ -1,7 +1,6 @@
 package src
 
 import (
-	"bytes"
 	"crypto/hmac"
 	"crypto/sha512"
 	"encoding/base64"
@@ -80,8 +79,6 @@ func (h *httpRequester) requestPrivate(order privateOrder, data interface{}, val
 
 	//replaced := bytes.ReplaceAll(rawDataByte, []byte("\""), []byte("'"))
 	//dataByte := bytes.NewBuffer(rawDataByte)
-	dataByte_bak := bytes.NewBufferString(string(rawDataByte))
-	Timelog(dataByte_bak)
 
 	dataByte := url.Values{}
 	dataByte.Set("currency", "btc")
@@ -89,14 +86,6 @@ func (h *httpRequester) requestPrivate(order privateOrder, data interface{}, val
 
 	nonce := time.Now().UnixNano() / int64(time.Millisecond)
 	strNonce := strconv.FormatInt(nonce, 10)
-
-	Timelog("data : ", data)
-	//Timelog("rawDataByte : ", string(rawDataByte))
-	Timelog("databyte : ", dataByte)
-	Timelog("NonceInt : ", nonce)
-	Timelog("NonceString : ", strNonce)
-	Timelog("URL : ", h.basicUrl+string(order))
-	Timelog("BODY : ", bytes.NewBufferString(values.Encode()))
 
 	//request, err := http.NewRequest("POST", h.basicUrl+string(order), dataByte)
 	request, err := http.NewRequest("POST", h.basicUrl+string(order), strings.NewReader(dataByte.Encode()))
@@ -118,9 +107,6 @@ func (h *httpRequester) requestPrivate(order privateOrder, data interface{}, val
 	request.Header.Add("Content-type", "application/x-www-form-urlencoded")
 	request.Header.Add("Content-Length", strconv.Itoa(len(dataByte.Encode())))
 
-	Timelog("Final, Header : ", request.Header)
-	Timelog("Final, Body : ", dataByte)
-
 	response, err := h.privateClient.Do(request)
 	if err != nil {
 		panic("Failed to receive Data, check server stauts")
@@ -134,28 +120,17 @@ func (h *httpRequester) requestPrivate(order privateOrder, data interface{}, val
 }
 
 func (h *httpRequester) encryptData(order privateOrder, nonce string, data []byte) string {
-	test, _ := url.ParseQuery(string(data))
-	Timelog("test : ", test)
 	//reqRawString := string(order) + string(0) + string(data) + string(0) + nonce
 	reqRawString := string(order) + string(data) + nonce
-	Timelog("is reqRawString utf-8? ", utf8.ValidString(reqRawString))
-
-	Timelog("reqRawString : ", reqRawString)
-	Timelog("secretKey : ", h.secretKey)
 
 	hmacParsed := hmac.New(sha512.New, []byte(h.secretKey))
 	hmacParsed.Write([]byte(reqRawString))
 
-	Timelog(hex.EncodeToString(hmacParsed.Sum(nil)))
-
 	hexData := hex.EncodeToString(hmacParsed.Sum(nil))
-	Timelog("hexData : ", hexData)
 	byteHexData := []byte(hexData)
 	hmacParsed.Reset()
 
 	result := base64.StdEncoding.EncodeToString(byteHexData)
-	Timelog("HMAC result : ", result)
-	Timelog("is result utf-8? ", utf8.ValidString(result))
 	return result
 }
 
