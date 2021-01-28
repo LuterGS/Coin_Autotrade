@@ -6,7 +6,7 @@ import (
 
 func main() {
 
-	src.Test()
+	src.Test1()
 	//src.Timelog(result)
 
 }

@@ -1,6 +1,9 @@
 package src
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"net/url"
+)
 
 type publicOrder string
 type privateOrder string
@@ -35,7 +38,7 @@ func NewBithumbRequester(connectKey string, secretKey string) *BithumbRequester 
 	bithumbRequester.candlestick = "/public/candlestick"
 
 	// init private API address
-	bithumbRequester.balance = "/private/balance"
+	bithumbRequester.balance = "/info/balance"
 
 	return &bithumbRequester
 }
@@ -112,7 +115,6 @@ func (b *BithumbRequester) GetBTCI() BTCI {
 func (b *BithumbRequester) GetCandleStick(orderCurreny currency, paymentCurrency currency, chartInterval timeInterval) CandleStick {
 	body := string(orderCurreny) + "_" + string(paymentCurrency) + "/" + string(chartInterval)
 	requestResult := b.requester.requestPublic(b.candlestick, body)
-	Timelog(string(requestResult))
 	var rawResult RawCandleStick
 	err := json.Unmarshal(requestResult, &rawResult)
 	if rawResult.Status != 0 {
@@ -124,12 +126,27 @@ func (b *BithumbRequester) GetCandleStick(orderCurreny currency, paymentCurrency
 	return NewCandleStick(rawResult)
 }
 
-func Test() {
+func (b *BithumbRequester) GetBalance(orderCurrency currency) {
+	passUrlVal := url.Values{
+		"currency": []string{string(orderCurrency)},
+		"endpoint": []string{string(b.balance)},
+	}
+	passVal := GetBalance{string(orderCurrency), string(b.balance)}
+	test, _ := json.Marshal(passVal)
+	Timelog("OriginTest : ", string(test))
+	result := b.requester.requestPrivate(b.balance, passVal, passUrlVal)
+	Timelog(string(result))
+}
+
+func Test1() {
+
+	test2 := NewClient("57bc35837f7f00c6f64a25d25ef69f6f", "7539214f665dfbd945dac04010b16eea")
+	val, err := test2.Balance("btc")
+	Timelog("ERR : ", err)
+	Timelog("VAL : ", val)
 
 	test := NewBithumbRequester("57bc35837f7f00c6f64a25d25ef69f6f", "7539214f665dfbd945dac04010b16eea")
-	//Timelog(test.GetAssetsStatus(BTC))
-	val := test.GetCandleStick(BTC, KRW, H24)
-	Timelog(val)
-	//Timelog(tval)
+
+	test.GetBalance(BTC)
 
 }

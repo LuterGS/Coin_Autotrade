@@ -115,3 +115,10 @@ func NewCandleStick(rawCandleStick RawCandleStick) CandleStick {
 	}
 	return newCandleStick
 }
+
+//====================== Private API 관련 ========================
+
+type GetBalance struct {
+	Currency string `json:"currency"`
+	Endpoint string `json:"endpoint"`
+}
