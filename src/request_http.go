@@ -1,18 +1,17 @@
 package src
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
-	"unicode/utf8"
 )
 
 type httpRequester struct {
@@ -32,9 +31,6 @@ func newHttpRequester(connectKey string, secretKey string) *httpRequester {
 	httpRequester.connectKey = connectKey
 	httpRequester.secretKey = secretKey
 	httpRequester.basicUrl = "https://api.bithumb.com"
-
-	Timelog(utf8.ValidString(connectKey))
-	Timelog(utf8.ValidString(secretKey))
 
 	httpRequester.publicClient = &http.Client{}
 	httpRequester.privateClient = &http.Client{}
@@ -64,48 +60,30 @@ func (h *httpRequester) requestPublic(order publicOrder, data string) []byte {
 	return byteResponse
 }
 
-func (h *httpRequester) requestPrivate(order privateOrder, data interface{}, values url.Values) []byte {
+func (h *httpRequester) requestPrivate(passVal map[string]string) []byte {
 
-	Timelog("connectKey : ", h.connectKey)
-	Timelog("secretKey : ", h.secretKey)
-	Timelog(values.Encode())
+	// request body 설정
+	requestBody := url.Values{}
+	for index, data := range passVal {
+		requestBody.Set(index, data)
+	}
+	requestBodyString := requestBody.Encode()
 
-	test := TEST{}
+	// nonce 및 api-sign 가져오기
+	nonce := fmt.Sprint(time.Now().UnixNano() / int64(time.Millisecond))
+	apiSignVal := h.encryptData(passVal["endpoint"], requestBodyString, nonce)
 
-	Decocer := json.NewEncoder(&test)
-	_ = Decocer.Encode(data)
-	rawDataByte := test.Container
-	Timelog("RAW : ", string(rawDataByte))
-
-	//replaced := bytes.ReplaceAll(rawDataByte, []byte("\""), []byte("'"))
-	//dataByte := bytes.NewBuffer(rawDataByte)
-
-	dataByte := url.Values{}
-	dataByte.Set("currency", "btc")
-	dataByte.Set("endpoint", "/info/balance")
-
-	nonce := time.Now().UnixNano() / int64(time.Millisecond)
-	strNonce := strconv.FormatInt(nonce, 10)
-
-	//request, err := http.NewRequest("POST", h.basicUrl+string(order), dataByte)
-	request, err := http.NewRequest("POST", h.basicUrl+string(order), strings.NewReader(dataByte.Encode()))
-	//request, err := http.NewRequest("POST", "http://0.0.0.0:9876", strings.NewReader(dataByte.Encode()))
+	// request 객체 생성
+	request, err := http.NewRequest("POST", h.basicUrl+passVal["endpoint"], bytes.NewBufferString(requestBodyString))
 	if err != nil {
 		panic("Failed to create Request")
 	}
-	encrypted := h.encryptData(order, strNonce, []byte(values.Encode()))
-	Timelog("Encrypted : ", encrypted)
 
-	request.Header.Add("User-Agent", "tester")
 	request.Header.Add("Api-Key", h.connectKey)
-	//request.Header.Add("Secret-Key", h.secretKey)
-	request.Header.Add("Api-Sign", encrypted)
-	request.Header.Add("Api-Nonce", strNonce)
-	request.Header.Add("Connection", "keep-alive")
-	request.Header.Add("Accept-Encoding", "gzip, deflate")
-	request.Header.Add("Accept", "*/*")
+	request.Header.Add("Api-Sign", apiSignVal)
+	request.Header.Add("Api-Nonce", nonce)
 	request.Header.Add("Content-type", "application/x-www-form-urlencoded")
-	request.Header.Add("Content-Length", strconv.Itoa(len(dataByte.Encode())))
+	request.Header.Add("Content-Length", strconv.Itoa(len(requestBodyString)))
 
 	response, err := h.privateClient.Do(request)
 	if err != nil {
@@ -119,9 +97,8 @@ func (h *httpRequester) requestPrivate(order privateOrder, data interface{}, val
 	return byteResponse
 }
 
-func (h *httpRequester) encryptData(order privateOrder, nonce string, data []byte) string {
-	//reqRawString := string(order) + string(0) + string(data) + string(0) + nonce
-	reqRawString := string(order) + string(data) + nonce
+func (h *httpRequester) encryptData(endpoint string, body string, nonce string) string {
+	reqRawString := endpoint + string(0) + body + string(0) + nonce
 
 	hmacParsed := hmac.New(sha512.New, []byte(h.secretKey))
 	hmacParsed.Write([]byte(reqRawString))

@@ -5,6 +5,21 @@ import (
 	"time"
 )
 
+//=============== RAW GETTER ==================
+
+type RawTicker struct {
+	Status int `json:"status,string"`
+
+	Data struct {
+		coin []interface{}
+	} `json:"data"`
+}
+
+type AllTicker struct {
+	Status int
+	Data   map[string]interface{}
+}
+
 type Ticker struct {
 	Status  int    `json:"status,string"`
 	Message string `json:"message"`
@@ -118,7 +133,36 @@ func NewCandleStick(rawCandleStick RawCandleStick) CandleStick {
 
 //====================== Private API 관련 ========================
 
-type GetBalance struct {
-	Currency string `json:"currency"`
-	Endpoint string `json:"endpoint"`
+type RawBalance struct {
+	Status int `json:"status,string"`
+	Data   map[string]interface{}
+}
+
+type Balance struct {
+	Status int
+	Data   struct {
+		TotalKrw        float64
+		InUseKrw        float64
+		AvailableKrw    float64
+		TotalCrypto     float64
+		InUseCrypto     float64
+		AvailableCrypto float64
+		XCoinLastCrypto float64
+	}
+}
+
+func NewBalance(rawBalance RawBalance, coin currency) Balance {
+	strCoin := string(coin)
+
+	newBalance := Balance{}
+	newBalance.Status = rawBalance.Status
+	newBalance.Data.TotalKrw, _ = strconv.ParseFloat(rawBalance.Data["total_krw"].(string), 64)
+	newBalance.Data.InUseKrw, _ = strconv.ParseFloat(rawBalance.Data["in_use_krw"].(string), 64)
+	newBalance.Data.AvailableKrw, _ = strconv.ParseFloat(rawBalance.Data["available_krw"].(string), 64)
+	newBalance.Data.TotalCrypto, _ = strconv.ParseFloat(rawBalance.Data["total_"+strCoin].(string), 64)
+	newBalance.Data.InUseCrypto, _ = strconv.ParseFloat(rawBalance.Data["in_use_"+strCoin].(string), 64)
+	newBalance.Data.AvailableCrypto, _ = strconv.ParseFloat(rawBalance.Data["available_"+strCoin].(string), 64)
+	newBalance.Data.XCoinLastCrypto, _ = strconv.ParseFloat(rawBalance.Data["xcoin_last_"+strCoin].(string), 64)
+
+	return newBalance
 }

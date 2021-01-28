@@ -2,7 +2,7 @@ package src
 
 import (
 	"encoding/json"
-	"net/url"
+	"sort"
 )
 
 type publicOrder string
@@ -43,16 +43,44 @@ func NewBithumbRequester(connectKey string, secretKey string) *BithumbRequester 
 	return &bithumbRequester
 }
 
+func (b *BithumbRequester) GetCoinList() []string {
+	requestResult := b.requester.requestPublic(b.ticker, "all_krw")
+	var tempResult AllTicker
+	var result []string
+	_ = json.Unmarshal(requestResult, &tempResult)
+	for index, data := range tempResult.Data {
+		result = append(result, index)
+		Timelog(index, data)
+	}
+	sort.Strings(result)
+	Timelog(result)
+	return result[:len(result)-1]
+}
+
+func (b *BithumbRequester) testTicker(orderCurrency currency, paymentCurrency currency) map[string]interface{} {
+	body := string(orderCurrency) + "_" + string(paymentCurrency)
+	requestResult := b.requester.requestPublic(b.ticker, body)
+	//Timelog(string(requestResult))
+	var result map[string]interface{}
+	err := json.Unmarshal(requestResult, &result)
+	if err != nil {
+		panic(err)
+	}
+	return result
+}
+
+// 현재 코드 수정
 func (b *BithumbRequester) GetTicker(orderCurrency currency, paymentCurrency currency) Ticker {
 	body := string(orderCurrency) + "_" + string(paymentCurrency)
 	requestResult := b.requester.requestPublic(b.ticker, body)
+	Timelog(string(requestResult))
 	var result Ticker
 	err := json.Unmarshal(requestResult, &result)
 	if err != nil {
 		panic(err)
 	}
 	if result.Status != 0 {
-		Timelog("GetTicker Failed : ", result.Message)
+		//Timelog("GetTicker Failed : ", result.Message)
 	}
 	return result
 }
@@ -126,22 +154,31 @@ func (b *BithumbRequester) GetCandleStick(orderCurreny currency, paymentCurrency
 	return NewCandleStick(rawResult)
 }
 
-func (b *BithumbRequester) GetBalance(orderCurrency currency) {
-	passUrlVal := url.Values{
-		"currency": []string{string(orderCurrency)},
-		"endpoint": []string{string(b.balance)},
-	}
-	passVal := GetBalance{string(orderCurrency), string(b.balance)}
-	test, _ := json.Marshal(passVal)
-	Timelog("OriginTest : ", string(test))
-	result := b.requester.requestPrivate(b.balance, passVal, passUrlVal)
-	Timelog(string(result))
+func (b *BithumbRequester) GetBalance(orderCurrency currency) Balance {
+
+	passVal := make(map[string]string)
+	passVal["currency"] = string(orderCurrency)
+	passVal["endpoint"] = string(b.balance)
+	requestResult := b.requester.requestPrivate(passVal)
+	Timelog(string(requestResult))
+	var rawResult RawBalance
+	_ = json.Unmarshal(requestResult, &rawResult)
+	Timelog(rawResult)
+
+	return NewBalance(rawResult, orderCurrency)
 }
 
 func Test1() {
 
 	test := NewBithumbRequester("57bc35837f7f00c6f64a25d25ef69f6f", "7539214f665dfbd945dac04010b16eea")
 
-	test.GetBalance(BTC)
+	// Timelog("coinlist : ", test.GetCoinList())
+	// val := test.testTicker(BTC, KRW)
+	// Timelog(val)
+	val := test.GetBalance(BTC)
+	Timelog("final result : ", val)
+	Timelog(val.Data.XCoinLastCrypto)
+	Timelog(val.Data.TotalKrw)
+	Timelog(val.Data.TotalCrypto)
 
 }

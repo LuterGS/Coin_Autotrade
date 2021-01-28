@@ -6,6 +6,8 @@ type timeInterval string
 const (
 	BTC currency = "btc"
 	KRW currency = "krw"
+	ETH currency = "eth"
+	ALL currency = "all" // -> 어떻게 짤 것인지 생각해봐야 함
 
 	M1  timeInterval = "1m"
 	M3  timeInterval = "3m"
